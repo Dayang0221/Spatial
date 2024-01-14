@@ -1,1 +1,102 @@
+setwd("/Users/chendayang/Desktop/Indonesia")
+#模仿lecture2&3
+library(sf)
+library(tmap)
+library(terra)
 
+charger <- read.csv('2.csv')
+charger <- charger[c("longitude", "latitude", "Type")] # 确保这里的列名与数据中的一致
+charger
+
+charger.sf = st_as_sf(charger, coords = c("longitude", "latitude"), crs=4326) #generate spatial points 
+
+#tm_shape(charger.sf)+tm_dots(size=0.001, col='blue')
+
+borough<-st_read("idn_adm_bps_20200401_shp/idn_admbnda_adm2_bps_20200401.shp")
+
+borough <- st_transform(borough, 4326) #transfer the projection
+#now we use st_filter to select chargers within London borough
+charger_london <- st_filter(charger.sf, borough)  #charger_join is the chargers points within London boundary
+#to get the charger points within borough, you can also use st_intersection(charger.sf, borough)
+# Please also try this code and see what you have got: plot(charger.sf[borough,])
+
+nrow(charger_london)  #11475 chargers are in London.
+
+color_map <- c("Geothermal" = "purple", "Hydro" = "blue", "solar" = "red", "wind" = "pink")
+
+
+tm_shape(borough)+tm_borders()+
+  tm_shape(charger_london)+tm_dots(col = "Type", palette = color_map, size = 0.05)+
+  tm_compass(type = "arrow", position = c("left", "bottom"))
+
+
+#pp的capacity
+# Load the necessary libraries
+library(sf)
+library(ggplot2)
+library(dplyr)
+library(ggspatial)
+
+# Set the working directory to the folder containing the geographic data
+#setwd("/Users/chendayang/Downloads/tza_admbnda_adm2_20181019")
+setwd("/Users/chendayang/Desktop/Indonesia")
+
+# Load geographic boundary data
+districts <- st_read("idn_adm_bps_20200401_shp/idn_admbnda_adm2_bps_20200401.shp")
+
+# Load population data and transform into an sf object
+cities <- read.csv('2.csv')
+#cities_sf <- st_as_sf(cities, coords = c('longitude', 'latitude'), crs = st_crs(districts))
+
+# 检查并移除含有缺失坐标的行
+cities <- cities[!is.na(cities$longitude) & !is.na(cities$latitude), ]
+
+# 将清理后的数据框转换为sf对象
+cities_sf <- st_as_sf(cities, coords = c('longitude', 'latitude'), crs = st_crs(districts))
+
+
+# Assuming 'ADM2_EN' is the column with district names in the 'districts' data
+# If the column name is different, replace 'ADM2_EN' with the correct column name
+
+# Create the map
+map <- ggplot(data = districts) +
+  geom_sf(fill = 'white', color = 'black') +  # Draw district boundaries
+  geom_sf_text(aes(label = ADM2_EN), check_overlap = TRUE, size = 1.0) +  # Add district names
+  geom_sf(data = cities_sf, aes(size = pop2023, color = pop2023), alpha = 0.6) +  # Add city points
+  scale_color_gradient(low = "lightblue", high = "darkblue", trans = "log10")+
+  scale_size(range = c(2, 10)) +  # Adjust the size range of the points
+  labs(color = 'Power Plant Capacity', size = 'Power Plant Capacity')+  # Add legend titles
+  theme_minimal() +
+  annotation_scale(location = "br", width_hint = 0.5) +  # Add scale bar
+  annotation_north_arrow(location = "tl", which_north = "true", pad_x = unit(0.5, "in"), pad_y = unit(0.5, "in"), style = north_arrow_fancy_orienteering)  # Add north arrow
+
+# Print the map
+print(map)
+
+#pp的status和type
+library(sf)
+library(ggplot2)
+library(ggspatial)
+
+# 设置工作目录
+setwd("/Users/chendayang/Desktop/Indonesia")
+
+# 1. 加载地理边界数据
+districts <- st_read("idn_adm_bps_20200401_shp/idn_admbnda_adm2_bps_20200401.shp")
+
+# 2. 加载城市数据并转换为sf对象
+cities <- read.csv('2.csv')
+cities_sf <- st_as_sf(cities, coords = c('longitude', 'latitude'), crs = st_crs(districts))
+
+# 3. 绘制地图
+ggplot() +
+  geom_sf(data = districts, fill = "lightgrey") + # 印度尼西亚地图
+  geom_sf(data = cities_sf, aes(color = status, shape = Type), size = 2) + # 发电站位置
+  theme_minimal() +
+  labs(color = "status", shape = "Type") +
+  annotation_scale(location = "br", width_hint = 0.5) +  # 添加比例尺
+  annotation_north_arrow(location = "tl", which_north = "true", 
+                         pad_x = unit(0.5, "in"), pad_y = unit(0.5, "in"), 
+                         style = north_arrow_fancy_orienteering) # 添加指南针
+
+  
