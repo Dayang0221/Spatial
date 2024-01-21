@@ -192,4 +192,395 @@ plot(boundaries, border='gray', lwd=0.5)
 plot(conditions_met, add=TRUE, col="blue", alpha=0.5) 
 
 
+install.packages("terra")
+install.packages("maps")
+install.packages("maptools")
+library(terra)
+library(tmap)
+library(ggplot2)
+library(sf)
+library(ggspatial)
+
+setwd("/Users/chendayang/Desktop/Indonesia")
+
+##3
+elevation <- rast("IDN_msk_alt-5/IDN_msk_alt.vrt")
+boundaries <- vect("IDN_adm/IDN_adm1.shp")
+
+rails <- vect("IDN_rrd/IDN_rails.shp")
+landcover <- rast("IDN_msk_cov-4/IDN_msk_cov.vrt")
+roads <- vect("IDN_rds/IDN_roads.shp")
+
+water_area <- vect("IDN_wat-2/IDN_water_areas_dcw.shp")
+
+protect1 <-vect("WDPA_WDOECM_Jan2024_Public_IDN_shp_0/WDPA_WDOECM_Jan2024_Public_IDN_shp-polygons.shp")
+protect2 <-vect("WDPA_WDOECM_Jan2024_Public_IDN_shp_1/WDPA_WDOECM_Jan2024_Public_IDN_shp-polygons.shp")
+protect3 <-vect("WDPA_WDOECM_Jan2024_Public_IDN_shp_2/WDPA_WDOECM_Jan2024_Public_IDN_shp-polygons.shp")
+
+
+#####
+slope <- terrain(elevation, "slope")
+aspect <- terrain(elevation, "aspect")
+
+rails_raster <- rast(elevation)
+values(rails_raster) <- 0
+
+roads_raster <- rast(elevation)
+values(roads_raster) <- 0
+
+water_area_raster <- rast(elevation)
+values(water_area_raster) <- 0
+
+protect1_raster <- rast(elevation)
+values(protect1_raster) <- 0
+
+protect2_raster <- rast(elevation)
+values(protect2_raster) <- 0
+
+protect3_raster <- rast(elevation)
+values(protect3_raster) <- 0
+
+######
+
+
+
+rails_raster <- rasterize(rails, rails_raster, field=1)
+roads_raster <- rasterize(roads, roads_raster, field=1)
+water_area_raster <- rasterize(water_area, water_area_raster, field=1)
+protect1_raster <- rasterize(protect1, protect1_raster, field=1)
+protect2_raster <- rasterize(protect2, protect2_raster, field=1)
+protect3_raster <- rasterize(protect3, protect3_raster, field=1)
+
+####
+roads_buffer <- buffer(roads, width = 150)
+roads_buffer_raster <- rasterize(roads_buffer, elevation, field = 1, background = 0)
+conditions_met[roads_buffer_raster == 1] <- NA
+
+
+
+conditions_met <- ifel(slope >= 5 & slope <= 15 & 
+                         ((aspect >= 60 & aspect <= 120) | (aspect >= 240 & aspect <= 300)),1,NA)
+conditions_met[rails_raster == 1] <- NA
+conditions_met[roads_raster == 1] <- NA
+conditions_met[water_area_raster == 1] <- NA
+conditions_met[protect3_raster == 1] <- NA
+conditions_met[protect2_raster == 1] <- NA
+conditions_met[protect1_raster == 1] <- NA
+
+
+plot(boundaries, border='gray', lwd=0.5) 
+plot(conditions_met, add=TRUE, col="blue", alpha=0.5) 
+
+random_points <- spatSample(conditions_met, 10, "random", na.rm = TRUE)
+
+# 查看这些点的坐标
+print(random_points)
+
+setwd("/Users/chendayang/Desktop/Week_6_Practical_Interpolation wind power data in Indonesia-20240114/Week_6_data")
+
+install.packages("ncdf4")
+install.packages("chron")
+
+library(ncdf4) #library to read and process netcdf data
+library(chron)
+
+era <- nc_open("era5.nc" )
+era
+
+lon <- ncvar_get(era, "longitude")
+lat <- ncvar_get(era, "latitude")
+time <- ncvar_get(era, "time")
+time
+
+dim(time)
+
+# get the unit of data
+tunits <- ncatt_get(era,"time","units") #tunits <- ncatt_get(era,"longitude","units")
+
+#convert time -- split the time units string into fields
+tustr <- strsplit(tunits$value, " ") #strsplit: split the element of character vector. we can convert  "hours since 1900-01-01" to "hours"      "since"      "1900-01-01"
+tdstr <- strsplit(unlist(tustr)[3], "-") #convert "1900-01-01" to "1900" "01"   "01"
+tyear <- as.integer(unlist(tdstr)[1]) 
+tmonth <- as.integer(unlist(tdstr)[2])
+tday <- as.integer(unlist(tdstr)[3])
+
+chron(time/24, origin=c(tmonth, tday, tyear) ) #this function is of great help. It can convert the hours
+
+
+#get Variables :u10,v10, ssrd. similar to get dimension data, we are going to use the same method, ncvar_get()
+ssrd_array <- ncvar_get(era,"ssrd") #get the Surface solar radiation downwards
+dim(ssrd_array) #dimension is 501 * 186 *8. Think about the Figure 1. The reason why it is called array is it is composed of 8 slices
+
+
+dlname <- ncatt_get(era,"ssrd","long_name")
+dunits <- ncatt_get(era,"ssrd","units")
+fillvalue <- ncatt_get(era,"ssrd","_FillValue")
+
+
+library(lattice)
+library(RColorBrewer)
+
+#Get a single time slice of the data using ssrd_array
+ssrd_slice <- ssrd_array[,,2] 
+#The ssrd_slice is actually a matrix. class(ssrd_slice)
+# What does 2 in ssrd_array[,,2] indicate?  What if I want to slice all four time slice for "07/01/19"? 
+
+length(na.omit(as.vector(ssrd_slice))) /length(as.vector(ssrd_slice)) #8.5% are valid
+
+dim(ssrd_slice )
+
+image(ssrd_slice, col=rev(brewer.pal(10,"RdBu")) )
+
+max_rad <- max(ssrd_slice, na.rm=TRUE)
+max_rad
+
+lonlat <- as.matrix( (expand.grid(lon, lat))) #lon and lat are what we extracted in step 2.
+dim(lonlat)
+
+ssrd_vec <- as.vector( ssrd_slice) 
+length(ssrd_vec)
+
+ssrd_df <- data.frame( cbind( lonlat,ssrd_vec  ))
+colnames(ssrd_df) <- c("lon", "lat", "ssrd")
+ssrd_df_value <- na.omit (ssrd_df)
+head(ssrd_df_value, 3) 
+
+#Creating a spatial object from a lat/lon table
+library(sf)
+ssrd_sf<- st_as_sf( ssrd_df_value, coords = c(  "lon", "lat")  ) #convert long and lat to point in simple feature format
+#To make it a complete geographical object we assign the WGS84 projection, which has the EPSG code 4326
+st_crs(ssrd_sf) <- 4326 
+ssrd_sf <- st_transform(ssrd_sf, 4326 )
+
+library(tmap)
+tmap_mode("view")
+
+tm_shape(ssrd_sf)+
+  tm_dots(col="ssrd", style = "quantile", size=.001, palette = "viridis")
+
+# 使用基础R的筛选方法
+ssrd_sf_filtered <- ssrd_sf[ssrd_sf$ssrd >= 14000000 & ssrd_sf$ssrd <= 23000000, ]
+
+# 可视化筛选后的数据
+tmap_mode("view")
+tm_shape(ssrd_sf_filtered) +
+  tm_dots(col="ssrd", style="quantile", size=.001, palette="viridis")
+
+library(terra)
+boundaries <- vect("/Users/chendayang/Desktop/Indonesia/IDN_adm/IDN_adm1.shp")
+elevation <- rast("/Users/chendayang/Desktop/Indonesia/IDN_msk_alt-5/IDN_msk_alt.vrt")
+slope <- terrain(elevation, "slope")
+aspect <- terrain(elevation, "aspect")
+
+
+# 将 ssrd_sf_filtered 转换为栅格
+ssrd_raster_filtered <- rasterize(ssrd_sf_filtered, elevation)
+
+setwd("/Users/chendayang/Desktop/Indonesia")
+
+rails <- vect("IDN_rrd/IDN_rails.shp")
+landcover <- rast("IDN_msk_cov-4/IDN_msk_cov.vrt")
+roads <- vect("IDN_rds/IDN_roads.shp")
+
+water_area <- vect("IDN_wat-2/IDN_water_areas_dcw.shp")
+
+protect1 <-vect("WDPA_WDOECM_Jan2024_Public_IDN_shp_0/WDPA_WDOECM_Jan2024_Public_IDN_shp-polygons.shp")
+protect2 <-vect("WDPA_WDOECM_Jan2024_Public_IDN_shp_1/WDPA_WDOECM_Jan2024_Public_IDN_shp-polygons.shp")
+protect3 <-vect("WDPA_WDOECM_Jan2024_Public_IDN_shp_2/WDPA_WDOECM_Jan2024_Public_IDN_shp-polygons.shp")
+
+
+#####
+slope <- terrain(elevation, "slope")
+aspect <- terrain(elevation, "aspect")
+
+rails_raster <- rast(elevation)
+values(rails_raster) <- 0
+
+roads_raster <- rast(elevation)
+values(roads_raster) <- 0
+
+water_area_raster <- rast(elevation)
+values(water_area_raster) <- 0
+
+protect1_raster <- rast(elevation)
+values(protect1_raster) <- 0
+
+protect2_raster <- rast(elevation)
+values(protect2_raster) <- 0
+
+protect3_raster <- rast(elevation)
+values(protect3_raster) <- 0
+
+######
+
+
+
+rails_raster <- rasterize(rails, rails_raster, field=1)
+roads_raster <- rasterize(roads, roads_raster, field=1)
+water_area_raster <- rasterize(water_area, water_area_raster, field=1)
+protect1_raster <- rasterize(protect1, protect1_raster, field=1)
+protect2_raster <- rasterize(protect2, protect2_raster, field=1)
+protect3_raster <- rasterize(protect3, protect3_raster, field=1)
+
+# 应用复合条件
+combined_conditions <- ifel(slope >= 5 & slope <= 15 &
+                              ((aspect >= 60 & aspect <= 120) | (aspect >= 240 & aspect <= 300)),
+                            ssrd_raster_filtered, NA)
+combined_conditions[rails_raster == 1] <- NA
+combined_conditions[roads_raster == 1] <- NA
+combined_conditions[water_area_raster == 1] <- NA
+combined_conditions[protect3_raster == 1] <- NA
+combined_conditions[protect2_raster == 1] <- NA
+combined_conditions[protect1_raster == 1] <- NA
+
+# 进行分析和可视化
+plot(slope, main="2222")
+plot(combined_conditions, add=TRUE, col="blue", alpha=0.5)
+
+# 3. 进行分析和可视化
+# 可视化同时满足坡度和 ssrd 条件的区域
+
+plot(boundaries, border='gray', lwd=0.5) 
+plot(combined_conditions, add=TRUE, col="blue", alpha=0.5) 
+
+
+
+# 应用坡度条件
+conditions_met <- ifel(slope >= 5 & slope <= 15, 1, NA)
+
+# 将条件应用于 ssrd 数据
+filtered_ssrd <- mask(ssrd_raster, conditions_met)
+
+# 3. 进行空间分析和可视化
+# 可视化符合条件的 ssrd 数据
+plot(slope, main="Slope")
+plot(filtered_ssrd, add=TRUE, col="blue", alpha=0.5)
+
+
+
+# 查看 ssrd_sf 的坐标参考系统
+crs_info <- st_crs(ssrd_sf)
+print(crs_info)
+
+uploaded_shapefile <- st_read("/Users/chendayang/Desktop/Indonesia/IDN_adm/IDN_adm1.shp")
+
+uploaded_shapefile <- st_transform(uploaded_shapefile, st_crs(ssrd_sf))
+
+# 空间叠加 ssrd_sf 和 uploaded_shapefile
+combined_sf <- st_join(uploaded_shapefile, ssrd_sf)
+
+# 为了实现“内连接”，筛选掉所有在 ssrd_sf 中没有数据的行
+combined_sf <- combined_sf[!is.na(combined_sf$ssrd), ]
+
+# 3. 分析和可视化
+# 示例：可视化每个行政区域的 ssrd 数据
+tmap_mode("plot")
+tm_shape(combined_sf) +
+  tm_borders("black") +
+  tm_dots(col = "ssrd", style = "quantile", size = 0.001, palette = "viridis")
+
+install.packages("geosphere")
+
+library(sf)
+
+library(geosphere)
+
+setwd("/Users/chendayang/Desktop/Indonesia")
+# 读取 GeoJSON 文件
+grid <- st_read("grid.geojson")
+
+# 定义坐标转换函数
+dms_to_dd <- function(degree, minute, second) {
+  return(degree + minute / 60 + second / 3600)
+}
+
+# 定义点的坐标（以度、分、秒格式）
+points_dms <- matrix(c(
+  -8, 22, 18, 120, 16, 2,
+  -8, 17, 34, 120, 15, 52
+), ncol = 6, byrow = TRUE)
+
+# 将点坐标转换为小数格式
+points_dd <- apply(points_dms, 1, function(x) {
+  c(dms_to_dd(x[1], x[2], x[3]), dms_to_dd(x[4], x[5], x[6]))
+})
+
+# 创建点的空间对象
+# 创建点的空间对象，确保列名与数据框中的列名一致
+points_sf <- st_as_sf(data.frame(points_dd), coords = c("V4", "V3"), crs = 4326)
+
+
+# 转换点的坐标系统以匹配电网数据
+points_transformed <- st_transform(points_sf, st_crs(grid))
+
+# 计算每个点到电网的最短距离
+distances <- sapply(st_geometry(points_transformed), function(point) {
+  min(st_distance(grid, point, by_element = TRUE))
+})
+
+# 输出距离
+distances
+
+
+library(sf)
+library(geosphere)
+
+setwd("/Users/chendayang/Desktop/Indonesia")
+# 读取 GeoJSON 文件
+grid <- st_read("grid.geojson")
+
+# 定义坐标转换函数
+dms_to_dd <- function(degree, minute, second) {
+  return(degree + minute / 60 + second / 3600)
+}
+
+# 定义点的坐标（以度、分、秒格式）
+points_dms <- matrix(c(
+  -8, 22, 18, 120, 16, 2,
+  -8, 17, 34, 120, 15, 52
+), ncol = 6, byrow = TRUE)
+
+# 将点坐标转换为小数格式
+points_dd <- apply(points_dms, 1, function(x) {
+  c(dms_to_dd(x[1], x[2], x[3]), dms_to_dd(x[4], x[5], x[6]))
+})
+
+# 创建点的数据框
+points_df <- data.frame(lon = points_dd[, 4], lat = points_dd[, 3])
+
+# 创建点的空间对象
+points_sf <- st_as_sf(points_df, coords = c("lon", "lat"), crs = 4326)
+
+# 转换点的坐标系统以匹配电网数据
+points_transformed <- st_transform(points_sf, st_crs(grid))
+
+# 计算每个点到电网的最短距离
+distances <- sapply(st_geometry(points_transformed), function(point) {
+  min(st_distance(grid, point, by_element = TRUE))
+})
+
+# 输出距离
+distances
+
+26203.74 +39788.84+55503.12+110693.37+101828.98
+1267.9 +1218.6 +818.7 +1408 +2013.4 
+6726.6*2555
+30，000/
+  
+  
+calc_NPV <- function(annual_revenue, i=0.05, lifetime_yrs, CAPEX, OPEX=0){
+    costs_op <- rep(OPEX, lifetime_yrs) #operating cost
+    revenue <- rep(annual_revenue, lifetime_yrs) 
+    t <- seq(1, lifetime_yrs, 1) #output: 1, 2, 3, ...25
+    
+    NPV <- sum( (revenue - costs_op)/(1 + i)**t ) - CAPEX
+    return(round(NPV, 0))
+}
+
+
+npv= calc_NPV(annual_revenue = 5160521.45,lifetime_yrs=25, CAPEX=14267870.62  )
+npv
+ifelse(npv>0, "Support","obeject" )
+
+
 
